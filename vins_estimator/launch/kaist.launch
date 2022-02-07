@@ -1,0 +1,51 @@
+<launch>
+    <arg name="bag_start"   default="5" /> <!-- urban39:5 -->
+    <arg name="dataset"     default="urban39" />
+    <arg name="dobag"       default="true" />
+    <arg name="bag_image_0" default="$(env HOME)/data/datasets/vio/kaist/$(arg dataset)/bag/stereo_left_image_raw.bag" />
+    <arg name="bag_image_1" default="$(env HOME)/data/datasets/vio/kaist/$(arg dataset)/bag/stereo_right_image_raw.bag" />
+    <arg name="bag_imu"     default="$(env HOME)/data/datasets/vio/kaist/$(arg dataset)/bag/imu_data_raw.bag" />
+
+    <!-- saving trajectory path and timing information -->
+    <arg name="dosave"      default="true" />
+    <arg name="path_est"    default="$(env HOME)/vio_eval/algorithms/vins_mono/$(arg dataset)/traj.txt" />
+    <arg name="path_time"   default="$(env HOME)/vio_eval/algorithms/vins_mono/$(arg dataset)/time.txt" />
+
+    <!-- start of the original vins-mono params -->
+    <arg name="config_path" default = "$(find feature_tracker)/../config/kaist/kaist.yaml" />
+	<arg name="vins_path" default = "$(find feature_tracker)/../" />
+
+    <node name="feature_tracker" pkg="feature_tracker" type="feature_tracker" output="log">
+        <param name="config_file" type="string" value="$(arg config_path)" />
+        <param name="vins_folder" type="string" value="$(arg vins_path)" />
+    </node>
+
+    <node name="vins_estimator" pkg="vins_estimator" type="vins_estimator" output="screen">
+       <param name="config_file" type="string" value="$(arg config_path)" />
+       <param name="vins_folder" type="string" value="$(arg vins_path)" />
+    </node>
+
+    <!-- <node name="pose_graph" pkg="pose_graph" type="pose_graph" output="screen">
+        <param name="config_file" type="string" value="$(arg config_path)" />
+        <param name="visualization_shift_x" type="int" value="0" />
+        <param name="visualization_shift_y" type="int" value="0" />
+        <param name="skip_cnt" type="int" value="0" />
+        <param name="skip_dis" type="double" value="0" />
+    </node> -->
+
+    <group if="$(arg dobag)">
+        <node pkg="rosbag" type="play" name="rosbag_imu" args="-d 1 -s $(arg bag_start) $(arg bag_imu)" />
+        <node pkg="rosbag" type="play" name="rosbag_image_0" args="-d 1 -s $(arg bag_start) $(arg bag_image_0)"/>
+        <!-- <node pkg="rosbag" type="play" name="rosbag_image_1" args="-d 1 -s $(arg bag_start) $(arg bag_image_1)" required="true"/> -->
+    </group>
+
+    <!-- record the trajectory if enabled -->
+    <group if="$(arg dosave)">
+        <node name="recorder_estimate" pkg="ov_eval" type="pose_to_file" output="screen" required="true">
+            <param name="topic"      type="str" value="/vins_estimator/odometry" />
+            <param name="topic_type" type="str" value="Odometry" />
+            <param name="output"     type="str" value="$(arg path_est)" />
+        </node>
+    </group>
+
+</launch>
