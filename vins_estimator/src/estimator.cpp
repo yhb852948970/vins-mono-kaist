@@ -618,7 +618,7 @@ void Estimator::double2vector()
 
 bool Estimator::failureDetection()
 {
-    if (Bas[WINDOW_SIZE].norm() > 1.5) //2.5
+    if (Bas[WINDOW_SIZE].norm() > 1.0) //2.5
     {
         ROS_WARN("Failure due to too big IMU acc bias estimation %f", Bas[WINDOW_SIZE].norm());
         return true;
@@ -672,14 +672,38 @@ void Estimator::optimization()
         problem.AddParameterBlock(para_Pose[i], SIZE_POSE, local_parameterization);
         problem.AddParameterBlock(para_SpeedBias[i], SIZE_SPEEDBIAS);
     }
+
     // add extrinsic calibration
+    const double BA_THRESHOLD = 0.1;
+    const double BG_THRESHOLD = 0.01;
+    const double SPEED_THRESHOLD = 1.0;
+    const double ORIENTATION_THRESHOLD  = 3.0;
     for (int i = 0; i < NUM_OF_CAM; i++)
     {
         ceres::LocalParameterization *local_parameterization = new PoseLocalParameterization();
         problem.AddParameterBlock(para_Ex_Pose[i], SIZE_POSE, local_parameterization);
 
         // modify the below blocks for scenario-based online calibration
-        if (!ESTIMATE_EXTRINSIC)
+
+        double max_ba = 0.0;
+        double max_bg = 0.0;
+        double min_speed = 100.0;
+        for (int i=0; i<=WINDOW_SIZE; i++)
+        {
+            max_ba = max(max_ba, Bas[i].norm());
+            max_bg = max(max_bg, Bgs[i].norm());
+            min_speed = min(min_speed, Vs[i].norm());
+        }
+
+        const auto orientation_change = abs(Utility::R2ypr(Rs[0].transpose()*Rs[WINDOW_SIZE])(0));
+        // ROS_WARN_STREAM("ORI_Change: " << orientation_change);
+
+        bool is_ba_small_enough = max_ba < BA_THRESHOLD;
+        bool is_bg_small_enough = max_bg < BG_THRESHOLD;
+        bool is_vehicle_moving = min_speed > SPEED_THRESHOLD;
+        bool is_turning = orientation_change > ORIENTATION_THRESHOLD;
+
+        if (!ESTIMATE_EXTRINSIC || !is_ba_small_enough || !is_bg_small_enough || !is_vehicle_moving || !is_turning)
         {
             ROS_DEBUG("fix extinsic param");
             problem.SetParameterBlockConstant(para_Ex_Pose[i]);
